@@ -4,5 +4,7 @@ node_modules
 *.db
 *.db-journal
 dist
+*.log
+*.err
 uploads/*
 !uploads/.gitkeep

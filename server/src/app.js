@@ -1,12 +1,13 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import { fileURLToPath } from "node:url";
 import { adminRoutes } from "./routes/adminRoutes.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { salesRoutes } from "./routes/salesRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
-dotenv.config();
+dotenv.config({ path: fileURLToPath(new URL("../.env", import.meta.url)) });
 
 export const app = express();
 
