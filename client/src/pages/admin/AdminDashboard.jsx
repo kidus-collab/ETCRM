@@ -80,7 +80,9 @@ export function AdminDashboard() {
     const form = new FormData();
     form.append("file", file);
     const { data } = await api.post("/admin/leads/upload", form);
-    setNotice(`Imported ${data.imported} leads.`);
+    const skippedText = data.skipped ? ` Skipped ${data.skipped}.` : "";
+    const reasonText = data.skippedRows?.length ? ` First issue: row ${data.skippedRows[0].row} - ${data.skippedRows[0].reason}.` : "";
+    setNotice(`Imported ${data.imported} leads.${skippedText}${reasonText}`);
     setFile(null);
     await loadData();
   }
@@ -105,8 +107,13 @@ export function AdminDashboard() {
   async function createLead(event) {
     event.preventDefault();
     setNotice("");
-    await api.post("/admin/leads", { ...newLead, assignedToId: newLead.assignedToId || null });
-    setNotice("Lead added.");
+    try {
+      await api.post("/admin/leads", { ...newLead, assignedToId: newLead.assignedToId || null });
+      setNotice("Lead added.");
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Could not add lead.");
+      return;
+    }
     setNewLead({ fullName: "", phoneNumber: "", email: "", assignedToId: "", businessName: "", licenceNumber: "", businessRegion: "", businessWoreda: "" });
     await loadData();
   }

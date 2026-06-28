@@ -38,6 +38,9 @@ Last updated: 2026-06-29
 - Admin reporting CSV export
 - Admin search/filtering by phase, assignment, creator, text
 - Sales-side lead search
+- Import duplicate detection by phone/license
+- Import summary with imported/skipped counts and row-level skip reasons
+- Manual lead duplicate prevention by phone/license
 
 ## Demo Logins
 
@@ -97,8 +100,7 @@ Before production:
 - Replace `db push` with real migrations after the hosted schema stabilizes
 - Use `pnpm seed:prod` for the first production Admin user
 - Create Sales users from the Admin dashboard
-- Add duplicate detection for imports
-- Add import result details for skipped rows
+- Add richer import preview before committing uploaded rows
 
 ## Important Local Notes
 

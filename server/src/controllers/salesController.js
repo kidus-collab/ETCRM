@@ -3,7 +3,7 @@ import { z } from "zod";
 import fs from "fs";
 import { prisma } from "../config/db.js";
 import { endOfDay, startOfDay } from "../utils/dates.js";
-import { buildLead, parseOptionalDate, readLeadRows } from "../services/leadImport.js";
+import { buildLead, findDuplicateLead, parseOptionalDate, prepareLeadImport, readLeadRows } from "../services/leadImport.js";
 
 const phaseSchema = z.object({ phase: z.nativeEnum(LeadPhase) });
 const noteSchema = z.object({ note: z.string().min(2) });
@@ -209,6 +209,11 @@ export async function updateAppointment(req, res, next) {
 export async function createLead(req, res, next) {
   try {
     const data = leadSchema.parse(req.body);
+    const duplicate = await findDuplicateLead(prisma, data);
+    if (duplicate) {
+      return res.status(409).json({ message: "A lead with this phone or license already exists", duplicate });
+    }
+
     const lead = await prisma.lead.create({
       data: {
         fullName: data.fullName,
@@ -248,22 +253,31 @@ export async function uploadLeads(req, res, next) {
   try {
     if (!req.file) return res.status(400).json({ message: "CSV or Excel file is required" });
     const rows = await readLeadRows(req.file);
-    const leads = rows
-      .map((row) => buildLead(row, { assignedToId: req.user.id, createdById: req.user.id }))
-      .filter(Boolean);
+    const candidates = rows.map((row, index) => ({
+      rowNumber: index + 2,
+      lead: buildLead(row, { assignedToId: req.user.id, createdById: req.user.id })
+    }));
+    const { leads, skipped } = await prepareLeadImport(prisma, candidates);
 
-    if (!leads.length) return res.status(400).json({ message: "No valid leads found. Required fields: business/name and phone." });
+    if (!leads.length) {
+      return res.status(400).json({
+        message: "No new valid leads found.",
+        imported: 0,
+        skipped: skipped.length,
+        skippedRows: skipped.slice(0, 25)
+      });
+    }
 
     await prisma.lead.createMany({ data: leads });
     await prisma.activityLog.create({
       data: {
         userId: req.user.id,
         type: ActivityType.LEAD_CREATED,
-        metadata: JSON.stringify({ imported: leads.length })
+        metadata: JSON.stringify({ imported: leads.length, skipped: skipped.length })
       }
     });
     fs.unlink(req.file.path, () => {});
-    res.status(201).json({ imported: leads.length });
+    res.status(201).json({ imported: leads.length, skipped: skipped.length, skippedRows: skipped.slice(0, 25) });
   } catch (error) {
     next(error);
   }

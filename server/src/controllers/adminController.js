@@ -5,7 +5,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "../config/db.js";
 import { parseDay, startOfDay, endOfDay } from "../utils/dates.js";
-import { buildLead, parseOptionalDate, readLeadRows } from "../services/leadImport.js";
+import { buildLead, findDuplicateLead, parseOptionalDate, prepareLeadImport, readLeadRows } from "../services/leadImport.js";
 
 const quotaSchema = z.object({
   salesUserId: z.string(),
@@ -149,18 +149,24 @@ export async function uploadLeads(req, res, next) {
     const salesUsers = await prisma.user.findMany({ where: { role: Role.SALES }, select: { id: true } });
     const rows = await readLeadRows(req.file);
 
-    const leads = rows
-      .map((row, index) => {
+    const candidates = rows.map((row, index) => {
         const assignedToId = salesUsers.length ? salesUsers[index % salesUsers.length].id : null;
-        return buildLead(row, { assignedToId, createdById: req.user.id });
-      })
-      .filter(Boolean);
+        return { rowNumber: index + 2, lead: buildLead(row, { assignedToId, createdById: req.user.id }) };
+      });
+    const { leads, skipped } = await prepareLeadImport(prisma, candidates);
 
-    if (!leads.length) return res.status(400).json({ message: "No valid leads found. Required fields: business/name and phone." });
+    if (!leads.length) {
+      return res.status(400).json({
+        message: "No new valid leads found.",
+        imported: 0,
+        skipped: skipped.length,
+        skippedRows: skipped.slice(0, 25)
+      });
+    }
 
     await prisma.lead.createMany({ data: leads });
     fs.unlink(req.file.path, () => {});
-    res.status(201).json({ imported: leads.length });
+    res.status(201).json({ imported: leads.length, skipped: skipped.length, skippedRows: skipped.slice(0, 25) });
   } catch (error) {
     next(error);
   }
@@ -169,6 +175,11 @@ export async function uploadLeads(req, res, next) {
 export async function createLead(req, res, next) {
   try {
     const data = leadSchema.parse(req.body);
+    const duplicate = await findDuplicateLead(prisma, data);
+    if (duplicate) {
+      return res.status(409).json({ message: "A lead with this phone or license already exists", duplicate });
+    }
+
     const lead = await prisma.lead.create({
       data: {
         fullName: data.fullName,

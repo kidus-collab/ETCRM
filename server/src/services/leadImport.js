@@ -84,3 +84,83 @@ export function buildLead(row, { assignedToId = null, createdById = null } = {})
     businessTelephone: normalizeExact(row, "BussinessTelephone")
   };
 }
+
+function normalizeKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function duplicateKey(lead) {
+  const phone = normalizeKey(lead.phoneNumber);
+  const license = normalizeKey(lead.licenceNumber);
+  return { phone, license };
+}
+
+export async function findDuplicateLead(prisma, { phoneNumber, licenceNumber, excludeId } = {}) {
+  const phone = String(phoneNumber || "").trim();
+  const license = String(licenceNumber || "").trim();
+  if (!phone && !license) return null;
+
+  return prisma.lead.findFirst({
+    where: {
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+      OR: [
+        ...(phone ? [{ phoneNumber: phone }] : []),
+        ...(license ? [{ licenceNumber: license }] : [])
+      ]
+    },
+    select: { id: true, fullName: true, phoneNumber: true, licenceNumber: true }
+  });
+}
+
+export async function prepareLeadImport(prisma, candidates) {
+  const skipped = [];
+  const validCandidates = [];
+  const filePhones = new Set();
+  const fileLicenses = new Set();
+
+  for (const candidate of candidates) {
+    if (!candidate.lead) {
+      skipped.push({ row: candidate.rowNumber, reason: "Missing business/name or phone" });
+      continue;
+    }
+
+    const { phone, license } = duplicateKey(candidate.lead);
+    if ((phone && filePhones.has(phone)) || (license && fileLicenses.has(license))) {
+      skipped.push({ row: candidate.rowNumber, reason: "Duplicate inside uploaded file", lead: candidate.lead.fullName });
+      continue;
+    }
+
+    if (phone) filePhones.add(phone);
+    if (license) fileLicenses.add(license);
+    validCandidates.push(candidate);
+  }
+
+  const phones = [...new Set(validCandidates.map((candidate) => candidate.lead.phoneNumber).filter(Boolean))];
+  const licenses = [...new Set(validCandidates.map((candidate) => candidate.lead.licenceNumber).filter(Boolean))];
+  const existing = phones.length || licenses.length
+    ? await prisma.lead.findMany({
+        where: {
+          OR: [
+            ...(phones.length ? [{ phoneNumber: { in: phones } }] : []),
+            ...(licenses.length ? [{ licenceNumber: { in: licenses } }] : [])
+          ]
+        },
+        select: { phoneNumber: true, licenceNumber: true }
+      })
+    : [];
+
+  const existingPhones = new Set(existing.map((lead) => normalizeKey(lead.phoneNumber)).filter(Boolean));
+  const existingLicenses = new Set(existing.map((lead) => normalizeKey(lead.licenceNumber)).filter(Boolean));
+  const leads = [];
+
+  for (const candidate of validCandidates) {
+    const { phone, license } = duplicateKey(candidate.lead);
+    if ((phone && existingPhones.has(phone)) || (license && existingLicenses.has(license))) {
+      skipped.push({ row: candidate.rowNumber, reason: "Already exists in CRM", lead: candidate.lead.fullName });
+      continue;
+    }
+    leads.push(candidate.lead);
+  }
+
+  return { leads, skipped };
+}

@@ -105,8 +105,15 @@ export function SalesDashboard() {
       ...newLead,
       appointmentDate: newLead.appointmentDate ? new Date(newLead.appointmentDate).toISOString() : null
     };
-    const { data } = await api.post("/sales/leads", payload);
-    setNotice("Lead added and assigned to you.");
+    let data;
+    try {
+      const response = await api.post("/sales/leads", payload);
+      data = response.data;
+      setNotice("Lead added and assigned to you.");
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Could not add lead.");
+      return;
+    }
     setNewLead({ fullName: "", phoneNumber: "", email: "", businessName: "", licenceNumber: "", businessRegion: "", businessWoreda: "", appointmentDate: "" });
     setActiveLeadId(data.lead.id);
     await loadDashboard();
@@ -118,7 +125,9 @@ export function SalesDashboard() {
     const form = new FormData();
     form.append("file", file);
     const { data } = await api.post("/sales/leads/upload", form);
-    setNotice(`Imported ${data.imported} leads and assigned them to you.`);
+    const skippedText = data.skipped ? ` Skipped ${data.skipped}.` : "";
+    const reasonText = data.skippedRows?.length ? ` First issue: row ${data.skippedRows[0].row} - ${data.skippedRows[0].reason}.` : "";
+    setNotice(`Imported ${data.imported} leads and assigned them to you.${skippedText}${reasonText}`);
     setFile(null);
     await loadDashboard();
   }
