@@ -7,6 +7,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node prisma/seed.js",
+    "seed:prod": "node prisma/seed-production.js",
     "db:prod:push": "prisma db push --schema prisma/schema.postgres.prisma",
     "prisma:prod": "prisma generate --schema prisma/schema.postgres.prisma",
     "prisma": "prisma"

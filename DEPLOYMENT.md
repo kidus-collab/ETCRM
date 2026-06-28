@@ -1,5 +1,7 @@
 # Deployment
 
+See [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md) for the step-by-step low-hassle path.
+
 The easiest free preview setup is:
 
 - Frontend: Vercel
@@ -26,10 +28,10 @@ Environment variables:
 - `JWT_SECRET`
 - `CLIENT_URL`
 
-After the first deploy, seed demo data:
+After the first deploy, seed the production admin:
 
 ```bash
-pnpm --dir server seed
+pnpm seed:prod
 ```
 
 ## 3. Deploy Frontend on Vercel
@@ -46,7 +48,6 @@ Environment variable:
 
 Then update Render `CLIENT_URL` to your Vercel URL.
 
-## 4. Demo Login
+## 4. First Login
 
-- Admin: `admin@etcrm.local` / `password123`
-- Sales: `sales@etcrm.local` / `password123`
+Use the admin email/password you provided through `ADMIN_EMAIL` and `ADMIN_PASSWORD`.

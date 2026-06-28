@@ -1,6 +1,6 @@
 # ETCRM Project Status
 
-Last updated: 2026-06-28
+Last updated: 2026-06-29
 
 ## Repository
 
@@ -89,13 +89,14 @@ Recommended:
 - Frontend: Vercel
 - Backend API: Render
 - Database: Supabase Postgres
+- Checklist: `DEPLOYMENT_CHECKLIST.md`
 
 Before production:
 
 - Use `server/prisma/schema.postgres.prisma` for Supabase/Render deployment
 - Replace `db push` with real migrations after the hosted schema stabilizes
-- Create production Admin user flow
-- Remove reliance on demo users/passwords
+- Use `pnpm seed:prod` for the first production Admin user
+- Create Sales users from the Admin dashboard
 - Add duplicate detection for imports
 - Add import result details for skipped rows
 
