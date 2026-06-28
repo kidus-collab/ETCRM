@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, PhoneCall, Save } from "lucide-react";
+import { CheckCircle2, PhoneCall, Save, Upload } from "lucide-react";
 import { api } from "../../api/client";
 import { Badge } from "../../components/Badge";
 import { StatCard } from "../../components/StatCard";
@@ -30,6 +30,17 @@ export function SalesDashboard() {
   const [appointmentDate, setAppointmentDate] = useState("");
   const [note, setNote] = useState("");
   const [notice, setNotice] = useState("");
+  const [file, setFile] = useState(null);
+  const [newLead, setNewLead] = useState({
+    fullName: "",
+    phoneNumber: "",
+    email: "",
+    businessName: "",
+    licenceNumber: "",
+    businessRegion: "",
+    businessWoreda: "",
+    appointmentDate: ""
+  });
 
   const activeList = dashboard?.todoLeads?.length ? dashboard.todoLeads : leads;
   const phaseChart = useMemo(() => dashboard?.phaseCounts || [], [dashboard]);
@@ -74,6 +85,34 @@ export function SalesDashboard() {
     setNote("");
     setNotice("Call note added.");
     await Promise.all([loadLead(activeLead.id), loadDashboard()]);
+  }
+
+  function updateNewLead(field, value) {
+    setNewLead((current) => ({ ...current, [field]: value }));
+  }
+
+  async function createLead(event) {
+    event.preventDefault();
+    const payload = {
+      ...newLead,
+      appointmentDate: newLead.appointmentDate ? new Date(newLead.appointmentDate).toISOString() : null
+    };
+    const { data } = await api.post("/sales/leads", payload);
+    setNotice("Lead added and assigned to you.");
+    setNewLead({ fullName: "", phoneNumber: "", email: "", businessName: "", licenceNumber: "", businessRegion: "", businessWoreda: "", appointmentDate: "" });
+    setActiveLeadId(data.lead.id);
+    await loadDashboard();
+  }
+
+  async function uploadCsv(event) {
+    event.preventDefault();
+    if (!file) return setNotice("Choose a CSV or Excel file first.");
+    const form = new FormData();
+    form.append("file", file);
+    const { data } = await api.post("/sales/leads/upload", form);
+    setNotice(`Imported ${data.imported} leads and assigned them to you.`);
+    setFile(null);
+    await loadDashboard();
   }
 
   async function saveAppointment() {
@@ -137,6 +176,35 @@ export function SalesDashboard() {
 
       {notice ? <div className="mt-5 rounded border border-line bg-white p-3 text-sm text-forest">{notice}</div> : null}
 
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
+        <section className="rounded-lg border border-line bg-white p-5 shadow-soft">
+          <h2 className="text-lg font-bold">Upload My Leads</h2>
+          <p className="mt-1 text-sm text-neutral-500">CSV or Excel uploads are assigned to you automatically.</p>
+          <form onSubmit={uploadCsv} className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <input type="file" accept=".csv,.xlsx,.xls" onChange={(event) => setFile(event.target.files?.[0] || null)} className="w-full rounded border border-line px-3 py-2 text-sm" />
+            <button className="inline-flex items-center justify-center gap-2 rounded bg-forest px-4 py-2 font-semibold text-white" type="submit">
+              <Upload size={18} />
+              Upload
+            </button>
+          </form>
+        </section>
+
+        <section className="rounded-lg border border-line bg-white p-5 shadow-soft">
+          <h2 className="text-lg font-bold">Add Lead Manually</h2>
+          <form onSubmit={createLead} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <input value={newLead.fullName} onChange={(event) => updateNewLead("fullName", event.target.value)} required placeholder="Full name or business" className="rounded border border-line px-3 py-2" />
+            <input value={newLead.phoneNumber} onChange={(event) => updateNewLead("phoneNumber", event.target.value)} required placeholder="Phone number" className="rounded border border-line px-3 py-2" />
+            <input value={newLead.email} onChange={(event) => updateNewLead("email", event.target.value)} placeholder="Email" className="rounded border border-line px-3 py-2" />
+            <input type="datetime-local" value={newLead.appointmentDate} onChange={(event) => updateNewLead("appointmentDate", event.target.value)} className="rounded border border-line px-3 py-2" />
+            <input value={newLead.businessName} onChange={(event) => updateNewLead("businessName", event.target.value)} placeholder="Business name" className="rounded border border-line px-3 py-2" />
+            <input value={newLead.licenceNumber} onChange={(event) => updateNewLead("licenceNumber", event.target.value)} placeholder="License number" className="rounded border border-line px-3 py-2" />
+            <input value={newLead.businessRegion} onChange={(event) => updateNewLead("businessRegion", event.target.value)} placeholder="Region" className="rounded border border-line px-3 py-2" />
+            <input value={newLead.businessWoreda} onChange={(event) => updateNewLead("businessWoreda", event.target.value)} placeholder="Woreda" className="rounded border border-line px-3 py-2" />
+            <button className="rounded bg-ink px-4 py-2 font-semibold text-white sm:col-span-2">Add Lead</button>
+          </form>
+        </section>
+      </div>
+
       <div className="mt-6 grid gap-6 lg:grid-cols-[380px_1fr]">
         <section className="rounded-lg border border-line bg-white shadow-soft">
           <div className="border-b border-line p-5">
@@ -173,6 +241,7 @@ export function SalesDashboard() {
                   <p className="text-neutral-500">{activeLead.email}</p>
                   <p className="mt-1 font-semibold">{activeLead.phoneNumber}</p>
                   {activeLead.appointmentDate ? <p className="mt-1 text-sm text-forest">Appointment: {formatDateTime(activeLead.appointmentDate)}</p> : null}
+                  <p className="mt-1 text-xs text-neutral-500">Assigned: {activeLead.assignedTo?.name || "Unassigned"} - Created by: {activeLead.createdBy?.name || "-"}</p>
                 </div>
                 <Badge phase={activeLead.phase} />
               </div>

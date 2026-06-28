@@ -17,6 +17,16 @@ export function AdminDashboard() {
   const [leadsTarget, setLeadsTarget] = useState(8);
   const [file, setFile] = useState(null);
   const [notice, setNotice] = useState("");
+  const [newLead, setNewLead] = useState({
+    fullName: "",
+    phoneNumber: "",
+    email: "",
+    assignedToId: "",
+    businessName: "",
+    licenceNumber: "",
+    businessRegion: "",
+    businessWoreda: ""
+  });
 
   const selectedQuota = useMemo(() => quotas.find((quota) => quota.salesUserId === selectedUser), [quotas, selectedUser]);
 
@@ -61,6 +71,25 @@ export function AdminDashboard() {
     const { data } = await api.post("/admin/leads/upload", form);
     setNotice(`Imported ${data.imported} leads.`);
     setFile(null);
+    await loadData();
+  }
+
+  function updateNewLead(field, value) {
+    setNewLead((current) => ({ ...current, [field]: value }));
+  }
+
+  async function createLead(event) {
+    event.preventDefault();
+    setNotice("");
+    await api.post("/admin/leads", { ...newLead, assignedToId: newLead.assignedToId || null });
+    setNotice("Lead added.");
+    setNewLead({ fullName: "", phoneNumber: "", email: "", assignedToId: "", businessName: "", licenceNumber: "", businessRegion: "", businessWoreda: "" });
+    await loadData();
+  }
+
+  async function assignLead(leadId, salesUserId) {
+    await api.patch(`/admin/leads/${leadId}/assign`, { salesUserId: salesUserId || null });
+    setNotice("Lead assignment updated.");
     await loadData();
   }
 
@@ -140,6 +169,26 @@ export function AdminDashboard() {
         </form>
       </section>
 
+      <section className="mt-6 rounded-lg border border-line bg-white p-5 shadow-soft">
+        <h2 className="text-lg font-bold">Add Lead Manually</h2>
+        <form onSubmit={createLead} className="mt-4 grid gap-3 md:grid-cols-4">
+          <input value={newLead.fullName} onChange={(event) => updateNewLead("fullName", event.target.value)} required placeholder="Full name or business" className="rounded border border-line px-3 py-2" />
+          <input value={newLead.phoneNumber} onChange={(event) => updateNewLead("phoneNumber", event.target.value)} required placeholder="Phone number" className="rounded border border-line px-3 py-2" />
+          <input value={newLead.email} onChange={(event) => updateNewLead("email", event.target.value)} placeholder="Email" className="rounded border border-line px-3 py-2" />
+          <select value={newLead.assignedToId} onChange={(event) => updateNewLead("assignedToId", event.target.value)} className="rounded border border-line px-3 py-2">
+            <option value="">Unassigned</option>
+            {salesUsers.map((user) => (
+              <option key={user.id} value={user.id}>{user.name}</option>
+            ))}
+          </select>
+          <input value={newLead.businessName} onChange={(event) => updateNewLead("businessName", event.target.value)} placeholder="Business name" className="rounded border border-line px-3 py-2" />
+          <input value={newLead.licenceNumber} onChange={(event) => updateNewLead("licenceNumber", event.target.value)} placeholder="License number" className="rounded border border-line px-3 py-2" />
+          <input value={newLead.businessRegion} onChange={(event) => updateNewLead("businessRegion", event.target.value)} placeholder="Region" className="rounded border border-line px-3 py-2" />
+          <input value={newLead.businessWoreda} onChange={(event) => updateNewLead("businessWoreda", event.target.value)} placeholder="Woreda" className="rounded border border-line px-3 py-2" />
+          <button className="rounded bg-forest px-4 py-2 font-semibold text-white md:col-span-4">Add Lead</button>
+        </form>
+      </section>
+
       <section className="mt-6 overflow-hidden rounded-lg border border-line bg-white shadow-soft">
         <div className="flex items-center justify-between border-b border-line p-5">
           <h2 className="text-lg font-bold">Recent Leads</h2>
@@ -155,6 +204,7 @@ export function AdminDashboard() {
                 <th className="px-5 py-3">Region</th>
                 <th className="px-5 py-3">Phase</th>
                 <th className="px-5 py-3">Assigned</th>
+                <th className="px-5 py-3">Created By</th>
                 <th className="px-5 py-3">Appointment</th>
                 <th className="px-5 py-3">Follow-Up</th>
               </tr>
@@ -170,7 +220,19 @@ export function AdminDashboard() {
                   <td className="px-5 py-3">{lead.licenceNumber || "-"}</td>
                   <td className="px-5 py-3">{lead.businessRegion || "-"}</td>
                   <td className="px-5 py-3"><Badge phase={lead.phase} /></td>
-                  <td className="px-5 py-3">{lead.assignedTo?.name || "Unassigned"}</td>
+                  <td className="px-5 py-3">
+                    <select
+                      value={lead.assignedTo?.id || ""}
+                      onChange={(event) => assignLead(lead.id, event.target.value)}
+                      className="min-w-36 rounded border border-line px-2 py-1"
+                    >
+                      <option value="">Unassigned</option>
+                      {salesUsers.map((user) => (
+                        <option key={user.id} value={user.id}>{user.name}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-5 py-3">{lead.createdBy?.name || "-"}</td>
                   <td className="px-5 py-3">{formatDate(lead.appointmentDate)}</td>
                   <td className="px-5 py-3">{formatDate(lead.followUpDate)}</td>
                 </tr>

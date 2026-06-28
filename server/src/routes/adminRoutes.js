@@ -2,6 +2,8 @@ import multer from "multer";
 import { Router } from "express";
 import {
   adminSummary,
+  assignLead,
+  createLead,
   exportReport,
   listLeads,
   listQuotas,
@@ -19,7 +21,9 @@ adminRoutes.use(requireAuth, requireRole("ADMIN"));
 adminRoutes.get("/summary", adminSummary);
 adminRoutes.get("/sales-users", listSalesUsers);
 adminRoutes.get("/leads", listLeads);
+adminRoutes.post("/leads", createLead);
 adminRoutes.post("/leads/upload", upload.single("file"), uploadLeads);
+adminRoutes.patch("/leads/:id/assign", assignLead);
 adminRoutes.get("/quotas", listQuotas);
 adminRoutes.post("/quotas", upsertQuota);
 adminRoutes.get("/reports/export", exportReport);

@@ -1,11 +1,10 @@
 import fs from "fs";
-import csv from "csv-parser";
-import XLSX from "xlsx";
 import { Parser } from "@json2csv/plainjs";
-import { LeadPhase, Role } from "@prisma/client";
+import { ActivityType, LeadPhase, Role } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../config/db.js";
 import { parseDay, startOfDay, endOfDay } from "../utils/dates.js";
+import { buildLead, parseOptionalDate, readLeadRows } from "../services/leadImport.js";
 
 const quotaSchema = z.object({
   salesUserId: z.string(),
@@ -14,86 +13,26 @@ const quotaSchema = z.object({
   leadsTarget: z.coerce.number().int().min(0)
 });
 
-const phaseValues = Object.values(LeadPhase);
+const leadSchema = z.object({
+  fullName: z.string().min(1),
+  phoneNumber: z.string().min(1),
+  email: z.string().optional().default(""),
+  phase: z.nativeEnum(LeadPhase).optional().default(LeadPhase.NEW),
+  assignedToId: z.string().nullable().optional(),
+  appointmentDate: z.string().nullable().optional(),
+  businessName: z.string().optional().default(""),
+  licenceNumber: z.string().optional().default(""),
+  businessRegion: z.string().optional().default(""),
+  businessZone: z.string().optional().default(""),
+  businessWoreda: z.string().optional().default(""),
+  businessKebele: z.string().optional().default(""),
+  houseNumber: z.string().optional().default(""),
+  businessTelephone: z.string().optional().default("")
+});
 
-function normalizeHeader(row, names) {
-  const found = Object.keys(row).find((key) => names.includes(key.trim().toLowerCase()));
-  return found ? String(row[found] || "").trim() : "";
-}
-
-function normalizeExact(row, name) {
-  return normalizeHeader(row, [name.toLowerCase()]);
-}
-
-function parseOptionalDate(value) {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-async function readRows(file) {
-  const extension = file.originalname.toLowerCase().split(".").pop();
-  if (["xlsx", "xls"].includes(extension)) {
-    const workbook = XLSX.readFile(file.path, { cellDates: true });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    return XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
-  }
-
-  const rows = [];
-  await new Promise((resolve, reject) => {
-    fs.createReadStream(file.path)
-      .pipe(csv())
-      .on("data", (row) => rows.push(row))
-      .on("end", resolve)
-      .on("error", reject);
-  });
-  return rows;
-}
-
-function buildLead(row, assignedToId) {
-  const managerName = [normalizeExact(row, "ManagerFName"), normalizeExact(row, "ManagerMName"), normalizeExact(row, "ManagerLName")].filter(Boolean).join(" ");
-  const businessName = normalizeExact(row, "BusinessName");
-  const fullName = normalizeHeader(row, ["full name", "fullname", "name"]) || businessName || managerName;
-  const phoneNumber = normalizeHeader(row, ["phone number", "phone", "mobile", "mangerphone", "managerphone"]) || normalizeExact(row, "BussinessTelephone");
-  const email = normalizeHeader(row, ["email", "email address"]);
-  const phase = normalizeHeader(row, ["phase", "status"]).toUpperCase().replace(/[-\s]/g, "_");
-
-  if (!fullName || !phoneNumber) return null;
-
-  return {
-    fullName,
-    phoneNumber,
-    email,
-    assignedToId,
-    phase: phaseValues.includes(phase) ? phase : LeadPhase.NEW,
-    appointmentDate: parseOptionalDate(normalizeHeader(row, ["appointment date", "appointmentdate", "appointment"])),
-    dateRegistered: parseOptionalDate(normalizeExact(row, "DateRegistered")),
-    legalStatusNameEng: normalizeExact(row, "LegalStatusNameEng"),
-    legalStatusNameAmh: normalizeExact(row, "LegalStatusNameAmh"),
-    status: normalizeExact(row, "Status"),
-    licenceNumber: normalizeExact(row, "LicenceNumber"),
-    renewedTo: parseOptionalDate(normalizeExact(row, "RenewedTo")),
-    siteId: normalizeExact(row, "SiteID"),
-    businessName,
-    businessNameAmharic: normalizeExact(row, "BusinessNameAmharic"),
-    managerFName: normalizeExact(row, "ManagerFName"),
-    managerMName: normalizeExact(row, "ManagerMName"),
-    managerLName: normalizeExact(row, "ManagerLName"),
-    description: normalizeExact(row, "description"),
-    code: normalizeExact(row, "Code"),
-    englishDescription: normalizeExact(row, "EnglishDescription"),
-    amDescription: normalizeExact(row, "Amdiscrption"),
-    subGroup: normalizeExact(row, "SubGroup"),
-    subGroupAm: normalizeExact(row, "SubGroupAM"),
-    subGroupEn: normalizeExact(row, "SubGroupEN"),
-    businessRegion: normalizeExact(row, "BussinessdescriptionRegion"),
-    businessZone: normalizeExact(row, "BussinessDescriptionZones"),
-    businessWoreda: normalizeExact(row, "BussinessDescriptionWoredas"),
-    businessKebele: normalizeExact(row, "BussinessAmharickebeles"),
-    houseNumber: normalizeExact(row, "HousNum"),
-    businessTelephone: normalizeExact(row, "BussinessTelephone")
-  };
-}
+const assignSchema = z.object({
+  salesUserId: z.string().nullable()
+});
 
 export async function adminSummary(req, res, next) {
   try {
@@ -127,7 +66,10 @@ export async function listSalesUsers(req, res, next) {
 export async function listLeads(req, res, next) {
   try {
     const leads = await prisma.lead.findMany({
-      include: { assignedTo: { select: { id: true, name: true } } },
+      include: {
+        assignedTo: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, role: true } }
+      },
       orderBy: { createdAt: "desc" },
       take: 100
     });
@@ -142,12 +84,12 @@ export async function uploadLeads(req, res, next) {
     if (!req.file) return res.status(400).json({ message: "CSV or Excel file is required" });
 
     const salesUsers = await prisma.user.findMany({ where: { role: Role.SALES }, select: { id: true } });
-    const rows = await readRows(req.file);
+    const rows = await readLeadRows(req.file);
 
     const leads = rows
       .map((row, index) => {
         const assignedToId = salesUsers.length ? salesUsers[index % salesUsers.length].id : null;
-        return buildLead(row, assignedToId);
+        return buildLead(row, { assignedToId, createdById: req.user.id });
       })
       .filter(Boolean);
 
@@ -156,6 +98,70 @@ export async function uploadLeads(req, res, next) {
     await prisma.lead.createMany({ data: leads });
     fs.unlink(req.file.path, () => {});
     res.status(201).json({ imported: leads.length });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createLead(req, res, next) {
+  try {
+    const data = leadSchema.parse(req.body);
+    const lead = await prisma.lead.create({
+      data: {
+        fullName: data.fullName,
+        phoneNumber: data.phoneNumber,
+        email: data.email,
+        phase: data.phase,
+        assignedToId: data.assignedToId || null,
+        createdById: req.user.id,
+        appointmentDate: parseOptionalDate(data.appointmentDate),
+        businessName: data.businessName,
+        licenceNumber: data.licenceNumber,
+        businessRegion: data.businessRegion,
+        businessZone: data.businessZone,
+        businessWoreda: data.businessWoreda,
+        businessKebele: data.businessKebele,
+        houseNumber: data.houseNumber,
+        businessTelephone: data.businessTelephone
+      },
+      include: {
+        assignedTo: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, role: true } }
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: { userId: req.user.id, leadId: lead.id, type: ActivityType.LEAD_CREATED }
+    });
+
+    res.status(201).json({ lead });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function assignLead(req, res, next) {
+  try {
+    const data = assignSchema.parse(req.body);
+    const lead = await prisma.lead.update({
+      where: { id: req.params.id },
+      data: { assignedToId: data.salesUserId },
+      include: {
+        assignedTo: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, role: true } }
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user.id,
+        leadId: lead.id,
+        type: ActivityType.LEAD_ASSIGNED,
+        metadata: JSON.stringify({ assignedToId: data.salesUserId })
+      }
+    });
+
+    res.json({ lead });
   } catch (error) {
     next(error);
   }
@@ -204,7 +210,8 @@ export async function exportReport(req, res, next) {
         quotas: { where: { date: { gte: from, lte: to } } },
         notes: { where: { createdAt: { gte: from, lte: to } } },
         activities: { where: { createdAt: { gte: from, lte: to } } },
-        assignedLeads: true
+        assignedLeads: true,
+        createdLeads: { where: { createdAt: { gte: from, lte: to } } }
       },
       orderBy: { name: "asc" }
     });
@@ -213,6 +220,7 @@ export async function exportReport(req, res, next) {
       agent: user.name,
       email: user.email,
       assignedLeads: user.assignedLeads.length,
+      createdLeads: user.createdLeads.length,
       callNotes: user.notes.length,
       activities: user.activities.length,
       quotaDays: user.quotas.length,

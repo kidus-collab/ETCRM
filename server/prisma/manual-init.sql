@@ -14,6 +14,7 @@ CREATE TABLE "Lead" (
     "phoneNumber" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "phase" TEXT NOT NULL DEFAULT 'NEW',
+    "createdById" TEXT,
     "appointmentDate" DATETIME,
     "dateRegistered" DATETIME,
     "legalStatusNameEng" TEXT,
@@ -44,6 +45,7 @@ CREATE TABLE "Lead" (
     "followUpDate" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "Lead_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "Lead_assignedToId_fkey" FOREIGN KEY ("assignedToId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 

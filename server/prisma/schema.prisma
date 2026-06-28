@@ -24,6 +24,8 @@ enum ActivityType {
   CALL_NOTE
   PHASE_CHANGE
   APPOINTMENT_SET
+  LEAD_CREATED
+  LEAD_ASSIGNED
 }
 
 model User {
@@ -33,6 +35,7 @@ model User {
   passwordHash String
   role         Role          @default(SALES)
   assignedLeads Lead[]       @relation("AssignedLeads")
+  createdLeads  Lead[]       @relation("CreatedLeads")
   notes        CallNote[]
   quotas       Quota[]
   activities   ActivityLog[]
@@ -46,6 +49,8 @@ model Lead {
   phoneNumber  String
   email        String
   phase        LeadPhase     @default(NEW)
+  createdById  String?
+  createdBy    User?         @relation("CreatedLeads", fields: [createdById], references: [id], onDelete: SetNull)
   appointmentDate DateTime?
   dateRegistered DateTime?
   legalStatusNameEng String?

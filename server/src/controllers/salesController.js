@@ -1,19 +1,43 @@
 import { ActivityType, LeadPhase } from "@prisma/client";
 import { z } from "zod";
+import fs from "fs";
 import { prisma } from "../config/db.js";
 import { endOfDay, startOfDay } from "../utils/dates.js";
+import { buildLead, parseOptionalDate, readLeadRows } from "../services/leadImport.js";
 
 const phaseSchema = z.object({ phase: z.nativeEnum(LeadPhase) });
 const noteSchema = z.object({ note: z.string().min(2) });
 const appointmentSchema = z.object({
   appointmentDate: z.string().nullable().optional()
 });
+const leadSchema = z.object({
+  fullName: z.string().min(1),
+  phoneNumber: z.string().min(1),
+  email: z.string().optional().default(""),
+  appointmentDate: z.string().nullable().optional(),
+  businessName: z.string().optional().default(""),
+  licenceNumber: z.string().optional().default(""),
+  businessRegion: z.string().optional().default(""),
+  businessZone: z.string().optional().default(""),
+  businessWoreda: z.string().optional().default(""),
+  businessKebele: z.string().optional().default(""),
+  houseNumber: z.string().optional().default(""),
+  businessTelephone: z.string().optional().default("")
+});
 
 async function ensureAssignedLead(leadId, userId) {
   return prisma.lead.findFirst({
-    where: { id: leadId, assignedToId: userId },
+    where: {
+      id: leadId,
+      OR: [
+        { assignedToId: userId },
+        { createdById: userId },
+        { assignedToId: null, phase: LeadPhase.NEW }
+      ]
+    },
     include: {
       assignedTo: { select: { id: true, name: true } },
+      createdBy: { select: { id: true, name: true, role: true } },
       callNotes: {
         include: { agent: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" }
@@ -38,8 +62,13 @@ export async function dashboard(req, res, next) {
       }),
       prisma.lead.findMany({
         where: {
-          assignedToId: userId,
-          OR: [{ followUpDate: { gte: today, lte: tomorrow } }, { appointmentDate: { gte: today, lte: tomorrow } }, { phase: LeadPhase.NEW }]
+          OR: [
+            { assignedToId: userId, followUpDate: { gte: today, lte: tomorrow } },
+            { assignedToId: userId, appointmentDate: { gte: today, lte: tomorrow } },
+            { assignedToId: userId, phase: LeadPhase.NEW },
+            { createdById: userId, phase: LeadPhase.NEW },
+            { assignedToId: null, phase: LeadPhase.NEW }
+          ]
         },
         orderBy: [{ appointmentDate: "asc" }, { followUpDate: "asc" }, { createdAt: "desc" }]
       }),
@@ -64,7 +93,13 @@ export async function dashboard(req, res, next) {
 export async function listMyLeads(req, res, next) {
   try {
     const leads = await prisma.lead.findMany({
-      where: { assignedToId: req.user.id },
+      where: {
+        OR: [
+          { assignedToId: req.user.id },
+          { createdById: req.user.id },
+          { assignedToId: null, phase: LeadPhase.NEW }
+        ]
+      },
       orderBy: { updatedAt: "desc" }
     });
     res.json({ leads });
@@ -89,11 +124,13 @@ export async function updateLeadPhase(req, res, next) {
     if (!lead) return res.status(404).json({ message: "Lead not found" });
 
     const data = phaseSchema.parse(req.body);
+    const shouldClaim = lead.phase === LeadPhase.NEW && data.phase === LeadPhase.CONTACTED;
     const updated = await prisma.lead.update({
       where: { id: lead.id },
-      data: { phase: data.phase },
+      data: { phase: data.phase, ...(shouldClaim ? { assignedToId: req.user.id } : {}) },
       include: {
         assignedTo: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, role: true } },
         callNotes: { include: { agent: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } }
       }
     });
@@ -103,7 +140,7 @@ export async function updateLeadPhase(req, res, next) {
         userId: req.user.id,
         leadId: lead.id,
         type: ActivityType.PHASE_CHANGE,
-        metadata: JSON.stringify({ from: lead.phase, to: data.phase })
+        metadata: JSON.stringify({ from: lead.phase, to: data.phase, claimedBy: shouldClaim ? req.user.id : null })
       }
     });
 
@@ -164,6 +201,69 @@ export async function updateAppointment(req, res, next) {
     });
 
     res.json({ lead: updated });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createLead(req, res, next) {
+  try {
+    const data = leadSchema.parse(req.body);
+    const lead = await prisma.lead.create({
+      data: {
+        fullName: data.fullName,
+        phoneNumber: data.phoneNumber,
+        email: data.email,
+        phase: LeadPhase.NEW,
+        assignedToId: req.user.id,
+        createdById: req.user.id,
+        appointmentDate: parseOptionalDate(data.appointmentDate),
+        businessName: data.businessName,
+        licenceNumber: data.licenceNumber,
+        businessRegion: data.businessRegion,
+        businessZone: data.businessZone,
+        businessWoreda: data.businessWoreda,
+        businessKebele: data.businessKebele,
+        houseNumber: data.houseNumber,
+        businessTelephone: data.businessTelephone
+      },
+      include: {
+        assignedTo: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, role: true } },
+        callNotes: { include: { agent: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } }
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: { userId: req.user.id, leadId: lead.id, type: ActivityType.LEAD_CREATED }
+    });
+
+    res.status(201).json({ lead });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function uploadLeads(req, res, next) {
+  try {
+    if (!req.file) return res.status(400).json({ message: "CSV or Excel file is required" });
+    const rows = await readLeadRows(req.file);
+    const leads = rows
+      .map((row) => buildLead(row, { assignedToId: req.user.id, createdById: req.user.id }))
+      .filter(Boolean);
+
+    if (!leads.length) return res.status(400).json({ message: "No valid leads found. Required fields: business/name and phone." });
+
+    await prisma.lead.createMany({ data: leads });
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user.id,
+        type: ActivityType.LEAD_CREATED,
+        metadata: JSON.stringify({ imported: leads.length })
+      }
+    });
+    fs.unlink(req.file.path, () => {});
+    res.status(201).json({ imported: leads.length });
   } catch (error) {
     next(error);
   }
