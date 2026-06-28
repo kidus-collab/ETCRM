@@ -36,15 +36,23 @@ const assignSchema = z.object({
 
 export async function adminSummary(req, res, next) {
   try {
-    const [leads, salesUsers, won, lost, followUps] = await Promise.all([
+    const today = startOfDay();
+    const [leads, salesUsers, won, lost, followUps, unassigned, salesCreatedToday] = await Promise.all([
       prisma.lead.count(),
       prisma.user.count({ where: { role: Role.SALES } }),
       prisma.lead.count({ where: { phase: LeadPhase.CLOSED_WON } }),
       prisma.lead.count({ where: { phase: LeadPhase.CLOSED_LOST } }),
-      prisma.lead.count({ where: { phase: LeadPhase.FOLLOW_UP } })
+      prisma.lead.count({ where: { phase: LeadPhase.FOLLOW_UP } }),
+      prisma.lead.count({ where: { assignedToId: null } }),
+      prisma.lead.count({
+        where: {
+          createdAt: { gte: today },
+          createdBy: { role: Role.SALES }
+        }
+      })
     ]);
 
-    res.json({ leads, salesUsers, won, lost, followUps });
+    res.json({ leads, salesUsers, won, lost, followUps, unassigned, salesCreatedToday });
   } catch (error) {
     next(error);
   }
@@ -65,7 +73,32 @@ export async function listSalesUsers(req, res, next) {
 
 export async function listLeads(req, res, next) {
   try {
+    const search = String(req.query.search || "").trim();
+    const phase = String(req.query.phase || "").trim();
+    const assignedToId = String(req.query.assignedToId || "").trim();
+    const createdById = String(req.query.createdById || "").trim();
+
+    const where = {
+      ...(phase && phase !== "ALL" ? { phase } : {}),
+      ...(assignedToId === "UNASSIGNED" ? { assignedToId: null } : assignedToId ? { assignedToId } : {}),
+      ...(createdById ? { createdById } : {}),
+      ...(search
+        ? {
+            OR: [
+              { fullName: { contains: search } },
+              { phoneNumber: { contains: search } },
+              { email: { contains: search } },
+              { businessName: { contains: search } },
+              { licenceNumber: { contains: search } },
+              { businessRegion: { contains: search } },
+              { businessWoreda: { contains: search } }
+            ]
+          }
+        : {})
+    };
+
     const leads = await prisma.lead.findMany({
+      where,
       include: {
         assignedTo: { select: { id: true, name: true } },
         createdBy: { select: { id: true, name: true, role: true } }

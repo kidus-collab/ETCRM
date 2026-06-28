@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import { Badge } from "../../components/Badge";
 import { StatCard } from "../../components/StatCard";
 import { AppLayout } from "../../layouts/AppLayout";
-import { formatDate, todayInputValue } from "../../utils/format";
+import { formatDate, phaseOptions, todayInputValue } from "../../utils/format";
 
 export function AdminDashboard() {
   const [summary, setSummary] = useState(null);
@@ -17,6 +17,12 @@ export function AdminDashboard() {
   const [leadsTarget, setLeadsTarget] = useState(8);
   const [file, setFile] = useState(null);
   const [notice, setNotice] = useState("");
+  const [leadFilters, setLeadFilters] = useState({
+    search: "",
+    phase: "ALL",
+    assignedToId: "",
+    createdById: ""
+  });
   const [newLead, setNewLead] = useState({
     fullName: "",
     phoneNumber: "",
@@ -34,7 +40,7 @@ export function AdminDashboard() {
     const [summaryRes, usersRes, leadsRes, quotasRes] = await Promise.all([
       api.get("/admin/summary"),
       api.get("/admin/sales-users"),
-      api.get("/admin/leads"),
+      api.get("/admin/leads", { params: leadFilters }),
       api.get("/admin/quotas", { params: { date } })
     ]);
     setSummary(summaryRes.data);
@@ -46,7 +52,7 @@ export function AdminDashboard() {
 
   useEffect(() => {
     loadData().catch((error) => setNotice(error.response?.data?.message || "Could not load dashboard"));
-  }, [date]);
+  }, [date, leadFilters]);
 
   useEffect(() => {
     if (selectedQuota) {
@@ -93,6 +99,10 @@ export function AdminDashboard() {
     await loadData();
   }
 
+  function updateLeadFilter(field, value) {
+    setLeadFilters((current) => ({ ...current, [field]: value }));
+  }
+
   function exportReport() {
     const token = localStorage.getItem("etcrm_token");
     window.open(`http://127.0.0.1:4000/api/admin/reports/export?token=${token}`, "_blank");
@@ -110,12 +120,14 @@ export function AdminDashboard() {
 
   return (
     <AppLayout title="Admin Dashboard" subtitle="Manage leads, quotas, and performance exports.">
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-7">
         <StatCard label="Total Leads" value={summary?.leads ?? "-"} tone="forest" />
         <StatCard label="Sales Agents" value={summary?.salesUsers ?? "-"} />
         <StatCard label="Follow-Ups" value={summary?.followUps ?? "-"} />
         <StatCard label="Closed Won" value={summary?.won ?? "-"} tone="gold" />
         <StatCard label="Closed Lost" value={summary?.lost ?? "-"} tone="coral" />
+        <StatCard label="Unassigned" value={summary?.unassigned ?? "-"} />
+        <StatCard label="Sales Added Today" value={summary?.salesCreatedToday ?? "-"} />
       </div>
 
       {notice ? <div className="mt-5 rounded border border-line bg-white p-3 text-sm text-forest">{notice}</div> : null}
@@ -191,8 +203,37 @@ export function AdminDashboard() {
 
       <section className="mt-6 overflow-hidden rounded-lg border border-line bg-white shadow-soft">
         <div className="flex items-center justify-between border-b border-line p-5">
-          <h2 className="text-lg font-bold">Recent Leads</h2>
-          <span className="text-sm text-neutral-500">{leads.length} shown</span>
+          <div>
+            <h2 className="text-lg font-bold">Recent Leads</h2>
+            <span className="text-sm text-neutral-500">{leads.length} shown</span>
+          </div>
+        </div>
+        <div className="grid gap-3 border-b border-line p-5 md:grid-cols-4">
+          <input
+            value={leadFilters.search}
+            onChange={(event) => updateLeadFilter("search", event.target.value)}
+            placeholder="Search name, phone, license, location"
+            className="rounded border border-line px-3 py-2"
+          />
+          <select value={leadFilters.phase} onChange={(event) => updateLeadFilter("phase", event.target.value)} className="rounded border border-line px-3 py-2">
+            <option value="ALL">All phases</option>
+            {phaseOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <select value={leadFilters.assignedToId} onChange={(event) => updateLeadFilter("assignedToId", event.target.value)} className="rounded border border-line px-3 py-2">
+            <option value="">All assignments</option>
+            <option value="UNASSIGNED">Unassigned</option>
+            {salesUsers.map((user) => (
+              <option key={user.id} value={user.id}>{user.name}</option>
+            ))}
+          </select>
+          <select value={leadFilters.createdById} onChange={(event) => updateLeadFilter("createdById", event.target.value)} className="rounded border border-line px-3 py-2">
+            <option value="">Created by anyone</option>
+            {salesUsers.map((user) => (
+              <option key={user.id} value={user.id}>{user.name}</option>
+            ))}
+          </select>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">

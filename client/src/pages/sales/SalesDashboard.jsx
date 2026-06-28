@@ -31,6 +31,7 @@ export function SalesDashboard() {
   const [note, setNote] = useState("");
   const [notice, setNotice] = useState("");
   const [file, setFile] = useState(null);
+  const [leadSearch, setLeadSearch] = useState("");
   const [newLead, setNewLead] = useState({
     fullName: "",
     phoneNumber: "",
@@ -43,6 +44,13 @@ export function SalesDashboard() {
   });
 
   const activeList = dashboard?.todoLeads?.length ? dashboard.todoLeads : leads;
+  const visibleActiveList = activeList.filter((lead) => {
+    const query = leadSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [lead.fullName, lead.phoneNumber, lead.email, lead.businessName, lead.licenceNumber, lead.businessRegion, lead.businessWoreda]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
   const phaseChart = useMemo(() => dashboard?.phaseCounts || [], [dashboard]);
 
   async function loadDashboard() {
@@ -145,7 +153,7 @@ export function SalesDashboard() {
     : [];
 
   return (
-    <AppLayout title="Sales Dashboard" subtitle="Work through today’s quota, follow-ups, and assigned leads.">
+    <AppLayout title="Sales Dashboard" subtitle="Work through today's quota, follow-ups, and assigned leads.">
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="Call Target" value={dashboard?.quota.callsTarget ?? "-"} tone="forest" />
         <StatCard label="Calls Made" value={dashboard?.progress.callsCompleted ?? "-"} />
@@ -210,9 +218,15 @@ export function SalesDashboard() {
           <div className="border-b border-line p-5">
             <h2 className="text-lg font-bold">Today&apos;s To-Do List</h2>
             <p className="text-sm text-neutral-500">Appointments, follow-ups, and new assigned leads.</p>
+            <input
+              value={leadSearch}
+              onChange={(event) => setLeadSearch(event.target.value)}
+              placeholder="Search my leads"
+              className="mt-3 w-full rounded border border-line px-3 py-2 text-sm"
+            />
           </div>
           <div className="max-h-[680px] overflow-y-auto">
-            {activeList.map((lead) => (
+            {visibleActiveList.map((lead) => (
               <button
                 key={lead.id}
                 onClick={() => setActiveLeadId(lead.id)}
