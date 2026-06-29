@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  SALES
+}
+
+enum LeadPhase {
+  NEW
+  CONTACTED
+  FOLLOW_UP
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum ActivityType {
+  CALL_NOTE
+  PHASE_CHANGE
+  APPOINTMENT_SET
+  LEAD_CREATED
+  LEAD_ASSIGNED
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  role         Role          @default(SALES)
+  assignedLeads Lead[]       @relation("AssignedLeads")
+  createdLeads  Lead[]       @relation("CreatedLeads")
+  notes        CallNote[]
+  quotas       Quota[]
+  activities   ActivityLog[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Lead {
+  id           String        @id @default(cuid())
+  fullName     String
+  phoneNumber  String
+  email        String        @default("")
+  phase        LeadPhase     @default(NEW)
+  createdById  String?
+  createdBy    User?         @relation("CreatedLeads", fields: [createdById], references: [id], onDelete: SetNull)
+  appointmentDate DateTime?
+  dateRegistered DateTime?
+  legalStatusNameEng String?
+  legalStatusNameAmh String?
+  status       String?
+  licenceNumber String?
+  renewedTo    DateTime?
+  siteId       String?
+  businessName String?
+  businessNameAmharic String?
+  managerFName String?
+  managerMName String?
+  managerLName String?
+  description  String?
+  code         String?
+  englishDescription String?
+  amDescription String?
+  subGroup     String?
+  subGroupAm   String?
+  subGroupEn   String?
+  businessRegion String?
+  businessZone String?
+  businessWoreda String?
+  businessKebele String?
+  houseNumber  String?
+  businessTelephone String?
+  assignedToId String?
+  assignedTo   User?         @relation("AssignedLeads", fields: [assignedToId], references: [id], onDelete: SetNull)
+  followUpDate DateTime?
+  callNotes    CallNote[]
+  activities   ActivityLog[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([phoneNumber])
+  @@index([licenceNumber])
+  @@index([phase])
+  @@index([assignedToId])
+  @@index([createdById])
+}
+
+model CallNote {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     User     @relation(fields: [agentId], references: [id])
+  note      String
+  createdAt DateTime @default(now())
+}
+
+model Quota {
+  id          String   @id @default(cuid())
+  salesUserId String
+  salesUser   User     @relation(fields: [salesUserId], references: [id], onDelete: Cascade)
+  date        DateTime
+  callsTarget Int      @default(0)
+  leadsTarget Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([salesUserId, date])
+}
+
+model ActivityLog {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  leadId    String?
+  lead      Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  type      ActivityType
+  metadata  String?
+  createdAt DateTime     @default(now())
+}

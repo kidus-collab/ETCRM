@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+.env
+*.db
+*.db-journal
+*.xlsx
+*.xls
+dist
+*.log
+*.err
+uploads/*
+!uploads/.gitkeep

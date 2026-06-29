@@ -1,0 +1,32 @@
+{
+  "name": "etcrm-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "seed": "node prisma/seed.js",
+    "seed:prod": "node prisma/seed-production.js",
+    "db:prod:push": "prisma db push --schema prisma/schema.postgres.prisma",
+    "prisma:prod": "prisma generate --schema prisma/schema.postgres.prisma",
+    "prisma": "prisma"
+  },
+  "dependencies": {
+    "@json2csv/plainjs": "^7.0.6",
+    "@prisma/client": "^6.10.1",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.1",
+    "xlsx": "^0.18.5",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10",
+    "prisma": "^6.10.1"
+  }
+}
