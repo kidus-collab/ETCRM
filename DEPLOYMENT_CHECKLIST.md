@@ -9,9 +9,11 @@ Recommended low-hassle setup:
 ## 1. Supabase
 
 1. Create a Supabase project.
-2. Copy the Postgres connection string.
-3. Use the pooled connection string if available.
-4. Keep the database password somewhere safe.
+2. Open Project Settings > Database.
+3. Copy the Postgres connection string.
+4. Use the pooled connection string if available.
+5. Make sure the URL includes SSL settings.
+6. Keep the database password somewhere safe.
 
 The Render backend will use this value as `DATABASE_URL`.
 
